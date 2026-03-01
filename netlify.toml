@@ -1,0 +1,8 @@
+[build]
+publish = "."
+
+[[redirects]]
+from = "/*"
+to = "/install.sh"
+status = 200
+conditions = {Method = ["GET"]}
