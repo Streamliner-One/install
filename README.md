@@ -1,23 +1,16 @@
 # Streamliner One Install
 
+![Org](https://img.shields.io/badge/org-Streamliner--One-181717?logo=github) ![Type](https://img.shields.io/badge/type-installer-blue) ![Status](https://img.shields.io/badge/status-active-brightgreen)
+
 Universal installer entrypoint for Streamliner One tooling.
 
-## Purpose
-This repo is the single `/install` endpoint used to bootstrap supported products.
+## Quick Start
 
-Current target:
-- Tools Config Server
-
-## Planned URL
 ```bash
 curl -fsSL https://install.streamliner.one | bash
 ```
 
-## Repo Layout
+## Files
 - `install.sh` — bootstrap installer
-- `versions.json` — stable/latest release channels
+- `versions.json` — release channels and artifact pointers
 - `artifacts/` — optional release bundles
-
-## Notes
-- Keep this repo simple and stable.
-- Backward compatibility matters: old installer URLs should continue to work.
