@@ -18,8 +18,8 @@ Sets up Node.js, downloads the server, installs dependencies, creates a systemd 
 
 | Channel | Version |
 |---------|---------|
-| `stable` | 0.6.0 |
-| `latest` | 0.6.0 |
+| `stable` | 0.6.1 |
+| `latest` | 0.6.1 |
 
 Channel manifest: [`versions.json`](./versions.json)
 
