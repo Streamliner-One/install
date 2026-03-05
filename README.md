@@ -25,26 +25,28 @@ Sets up Node.js, downloads the server, installs dependencies, creates a systemd 
 
 ---
 
-## Supported services (24)
+## Supported services
 
 | Category | Services |
 |----------|----------|
 | **AI** | OpenAI, Anthropic, Moonshot (Kimi), Gemini (Google), Perplexity |
 | **Search** | Brave Search, NewsAPI |
-| **Productivity** | Notion, Todoist, Google Workspace |
+| **Productivity** | Notion, Notion (Enhanced), Todoist, Google Workspace |
 | **Travel** | Amadeus, Duffel, Aviationstack |
 | **Voice** | ElevenLabs, VAPI |
 | **Automation** | n8n |
 | **Vector DB** | Pinecone |
 | **Messaging** | Telegram |
 | **Location** | Google Places |
-| **Finance** | Open Exchange Rates |
+| **Finance** | Open Exchange Rates, Stripe |
 | **Logistics** | 17TRACK |
 | **Health** | Oura |
 | **Security** | 1Password |
 | **Audio** | OpenAI Whisper |
 | **Weather** | Open-Meteo (no key needed) |
 | **Image** | Nano Banana Pro |
+| **Utilities** | Public Holidays (Nager.Date) |
+| **Developer** | GitHub, Supabase, Resend |
 
 ---
 
