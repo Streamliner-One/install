@@ -29,8 +29,8 @@ Sets up Node.js, downloads the server, installs dependencies, creates a systemd 
 
 | Category | Services |
 |----------|----------|
-| **AI** | OpenAI, Anthropic, Moonshot (Kimi), Gemini (Google), Perplexity |
-| **Search** | Brave Search, NewsAPI |
+| **AI** | OpenAI, Anthropic, Moonshot (Kimi), Gemini (Google) |
+| **Search** | Brave Search, Perplexity, NewsAPI |
 | **Productivity** | Notion, Notion (Enhanced), Todoist, Google Workspace |
 | **Travel** | Amadeus, Duffel, Aviationstack |
 | **Voice** | ElevenLabs, VAPI |
