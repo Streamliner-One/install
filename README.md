@@ -21,6 +21,7 @@ Sets up Node.js, downloads the server, installs dependencies, creates a systemd 
 | **TOOLS.md generator** | Auto-generates a human-readable credential reference for AI agents |
 | **Intent router** | Lightweight `router.json` maps agent intents to the right service — no guessing |
 | **Rate limit resilience** | Configurable retry + exponential backoff when providers return 429 |
+| **E2E verification** | `verify-integrations.sh` tests every credential end-to-end: schema → router → live API probe |
 | **Update center** | One-click update from the dashboard — no SSH required |
 
 ---
@@ -73,8 +74,8 @@ curl https://install.streamliner.one | bash -s -- --channel latest
 
 | Channel | Version |
 |---------|---------|
-| `stable` | 0.8.5 |
-| `latest` | 0.8.5 |
+| `stable` | 0.8.7 |
+| `latest` | 0.8.7 |
 
 Channel manifest: [`versions.json`](./versions.json)
 
