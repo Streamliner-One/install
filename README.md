@@ -36,6 +36,7 @@ Sets up Node.js, downloads the server, installs dependencies, creates a systemd 
 | **Knowledge** | Obsidian Sync (Headless), Readwise |
 | **Travel** | Amadeus, Duffel, Aviationstack |
 | **Voice** | ElevenLabs, VAPI |
+| **Support** | Groove HQ |
 | **Automation** | n8n |
 | **Vector DB** | Pinecone |
 | **Messaging** | Telegram |
@@ -74,8 +75,8 @@ curl https://tools.streamliner.one | bash -s -- --channel latest
 
 | Channel | Version |
 |---------|---------|
-| `stable` | 0.9.1 |
-| `latest` | 0.9.1 |
+| `stable` | 0.9.2 |
+| `latest` | 0.9.2 |
 
 Channel manifest: [`versions.json`](./versions.json)
 
