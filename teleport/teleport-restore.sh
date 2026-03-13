@@ -238,7 +238,7 @@ PYEOF
     chmod 600 "${OPENCLAW_DIR}/openclaw.json"
     ok "openclaw.json restored"
     if [ -n "$TELEGRAM_TOKEN_ARG" ]; then
-      jq --arg tok "$TELEGRAM_TOKEN_ARG" '.channels.telegram.token = $tok' \
+      jq --arg tok "$TELEGRAM_TOKEN_ARG" '.channels.telegram.botToken = $tok' \
         "${OPENCLAW_DIR}/openclaw.json" > /tmp/openclaw.json.tmp \
         && mv /tmp/openclaw.json.tmp "${OPENCLAW_DIR}/openclaw.json" \
         && chmod 600 "${OPENCLAW_DIR}/openclaw.json"
@@ -319,7 +319,7 @@ PYEOF
 
   mkdir -p "$SYSTEMD_USER_DIR"
 
-  TELEGRAM_TOKEN=$(jq -r '.channels.telegram.token // empty' "${OPENCLAW_DIR}/openclaw.json" 2>/dev/null || echo "")
+  TELEGRAM_TOKEN=$(jq -r '.channels.telegram.botToken // empty' "${OPENCLAW_DIR}/openclaw.json" 2>/dev/null || echo "")
   NODE_BIN=$(which node 2>/dev/null || echo "/usr/bin/node")
   OPENCLAW_MAIN="${NPM_GLOBAL}/lib/node_modules/openclaw/dist/index.js"
   TARGET_UID=$(id -u)
@@ -609,7 +609,7 @@ NEXTSTEPS
   # ── Telegram notification (best effort) ──────────────────────────────────
   TELEGRAM_BOT_TOKEN=""
   if [ -f "${OPENCLAW_DIR}/openclaw.json" ]; then
-    TELEGRAM_BOT_TOKEN=$(python3 -c "import json,sys; d=json.load(open('${OPENCLAW_DIR}/openclaw.json')); print(d.get('channels',{}).get('telegram',{}).get('token',''))" 2>/dev/null || true)
+    TELEGRAM_BOT_TOKEN=$(python3 -c "import json,sys; d=json.load(open('${OPENCLAW_DIR}/openclaw.json')); print(d.get('channels',{}).get('telegram',{}).get('botToken',''))" 2>/dev/null || true)
   fi
 
   if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
