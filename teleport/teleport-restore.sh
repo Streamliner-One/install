@@ -713,6 +713,119 @@ else
   warn "Tools server did not start — check: journalctl --user -u tools-config-server -n 20"
 fi
 
+# ── Detect Tailscale + dashboard URL ─────────────────────────────────────────
+TAILSCALE_HOSTNAME=""
+TAILSCALE_CERT_STATUS="not available"
+DASHBOARD_URL="http://localhost:8443 (SSH tunnel required)"
+if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  TAILSCALE_HOSTNAME=$(tailscale status --json 2>/dev/null | grep -o '"Self":{"ID":"[^"]*","PublicKey":"[^"]*","HostName":"[^"]*"' | grep -o '"HostName":"[^"]*"' | cut -d'"' -f4 || hostname)
+  TAILSCALE_DOMAIN=$(tailscale status --json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('MagicDNSSuffix',''))" 2>/dev/null || true)
+  if [ -n "$TAILSCALE_HOSTNAME" ] && [ -n "$TAILSCALE_DOMAIN" ]; then
+    TAILSCALE_FQDN="${TAILSCALE_HOSTNAME}.${TAILSCALE_DOMAIN}"
+    DASHBOARD_URL="https://${TAILSCALE_FQDN}:8443"
+    # Attempt cert issuance
+    if tailscale cert "${TAILSCALE_FQDN}" --cert-file "${TARGET_HOME}/.openclaw/certs/${TAILSCALE_FQDN}.crt" --key-file "${TARGET_HOME}/.openclaw/certs/${TAILSCALE_FQDN}.key" 2>/dev/null; then
+      chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.openclaw/certs/${TAILSCALE_FQDN}.crt" "${TARGET_HOME}/.openclaw/certs/${TAILSCALE_FQDN}.key" 2>/dev/null || true
+      TAILSCALE_CERT_STATUS="issued ✅ (green lock ready)"
+    else
+      TAILSCALE_CERT_STATUS="cert issue failed — run: tailscale cert ${TAILSCALE_FQDN}"
+      DASHBOARD_URL="https://${TAILSCALE_FQDN}:8443 (cert pending)"
+    fi
+  fi
+fi
+
+PUBLIC_IP=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || echo "unknown")
+RESTORE_TIMESTAMP=$(date '+%Y-%m-%d %H:%M %Z')
+
+# ── Write NEXT_STEPS.txt ──────────────────────────────────────────────────────
+NEXT_STEPS_FILE="${TARGET_HOME}/NEXT_STEPS.txt"
+cat > "$NEXT_STEPS_FILE" << NEXTSTEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TELEPORT COMPLETE — Hello from your past self 👋
+  Restored: ${RESTORE_TIMESTAMP}
+  Server:   $(hostname) / ${PUBLIC_IP}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT WAS RESTORED
+─────────────────
+  ✅ OpenClaw workspace (memories, config, tools)
+  ✅ Tools Config Server  →  http://localhost:8080 (agent)
+  ✅ Qdrant vector DB     →  port 6333
+  ✅ Neo4j graph DB       →  port 8687
+$([ -n "$TELEGRAM_TOKEN_ARG" ] && echo "  ✅ Telegram gateway    →  running (bot token provided)" || echo "  ⚠️  Telegram gateway    →  NOT started (no bot token — see below)")
+
+TOOLS SERVER
+────────────
+  Agent endpoint:    http://localhost:8080   (always works, no TLS)
+  Browser dashboard: ${DASHBOARD_URL}
+  Password:          ${TOOLS_PASSWORD}
+  Tailscale cert:    ${TAILSCALE_CERT_STATUS}
+
+  To open dashboard via SSH tunnel (if no Tailscale):
+    ssh -L 8443:localhost:8443 ${TARGET_USER}@${PUBLIC_IP}
+    Then open: http://localhost:8443
+
+$([ -z "$TELEGRAM_TOKEN_ARG" ] && cat << 'NOTOKEN'
+TELEGRAM SETUP NEEDED
+─────────────────────
+  1. Create a new bot: @BotFather → /newbot
+  2. Edit config:      nano ~/.openclaw/openclaw.json
+                       → channels.telegram.token = <new-bot-token>
+  3. Start gateway:    systemctl --user start openclaw-gateway
+  4. Test:             Send /start to your bot in Telegram
+
+NOTOKEN
+)
+NEXT STEPS
+──────────
+  1. SSH in:        ssh ${TARGET_USER}@${PUBLIC_IP}
+  2. Change passwd: passwd
+  3. Run checks:    ~/.openclaw/workspace/tools-server/agent-tools-check.sh
+  4. Harden:        bash ~/.openclaw/workspace/streamliner/install/teleport/harden.sh
+     (installs fail2ban, disables root SSH — run AFTER confirming SSH access works)
+$([ -n "$TAILSCALE_HOSTNAME" ] && echo "  5. Tailscale:     Already detected (${TAILSCALE_FQDN})" || echo "  5. Tailscale:     Not detected — install if you want dashboard green lock")
+
+HEALTH CHECK
+────────────
+$(~/.openclaw/workspace/tools-server/agent-tools-check.sh 2>/dev/null || echo "  (run manually: ~/.openclaw/workspace/tools-server/agent-tools-check.sh)")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEXTSTEPS
+
+chown "${TARGET_USER}:${TARGET_USER}" "$NEXT_STEPS_FILE"
+ok "NEXT_STEPS.txt written → ${NEXT_STEPS_FILE}"
+
+# ── Telegram notification (best effort) ──────────────────────────────────────
+TELEGRAM_BOT_TOKEN=""
+if [ -f "${TARGET_HOME}/.openclaw/openclaw.json" ]; then
+  TELEGRAM_BOT_TOKEN=$(python3 -c "import json,sys; d=json.load(open('${TARGET_HOME}/.openclaw/openclaw.json')); print(d.get('channels',{}).get('telegram',{}).get('token',''))" 2>/dev/null || true)
+fi
+
+if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+  TG_MSG="🚀 *Teleport complete*
+
+Server: \`$(hostname)\` / \`${PUBLIC_IP}\`
+Restored: ${RESTORE_TIMESTAMP}
+
+*Tools server:* http://localhost:8080
+*Dashboard:* ${DASHBOARD_URL}
+*Password:* \`${TOOLS_PASSWORD}\`
+
+$([ "$FAIL" -eq 0 ] && echo "✅ All checks passed" || echo "⚠️ ${FAIL} check(s) failed — see NEXT_STEPS.txt")
+
+Full details: \`cat ~/NEXT_STEPS.txt\`"
+
+  curl -sf --max-time 10 \
+    -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d "chat_id=58748195" \
+    -d "parse_mode=Markdown" \
+    --data-urlencode "text=${TG_MSG}" \
+    >/dev/null 2>&1 && ok "Telegram notification sent to Alex" \
+                     || warn "Telegram notification failed (best effort — check ~/NEXT_STEPS.txt)"
+else
+  warn "No Telegram token found — skipping notification (check ~/NEXT_STEPS.txt)"
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [ "$FAIL" -eq 0 ]; then
