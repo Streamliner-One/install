@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Default to localhost — each machine runs its own tools server after teleport.
-# Override with TOOLS_SERVER_URL env var if needed (e.g. for the original mel server).
-BASE_URL="${TOOLS_SERVER_URL:-https://localhost:8443}"
+# Auto-detect tools server: try localhost first (standard for teleported machines),
+# then fall back to the Tailscale address (mel's original setup).
+# Override entirely with TOOLS_SERVER_URL env var if needed.
+if [ -z "${TOOLS_SERVER_URL:-}" ]; then
+  if curl -sk --max-time 3 "https://localhost:8443/api/version" >/dev/null 2>&1; then
+    BASE_URL="https://localhost:8443"
+  else
+    BASE_URL="https://mel.taile54a5b.ts.net:8443"
+  fi
+else
+  BASE_URL="$TOOLS_SERVER_URL"
+fi
 PASSWORD="${TOOLS_SERVER_PASSWORD:-mel2026}"
 COOKIE_FILE="/tmp/tools_server_cookie_$$.txt"
 ALL_OK=true
@@ -27,7 +36,7 @@ fi
 # ── Qdrant ───────────────────────────────────────────────────────────────────
 QDRANT_PORT="${QDRANT_PORT:-6333}"
 QDRANT_STATUS=$(curl -s --max-time 5 "http://localhost:${QDRANT_PORT}/healthz" 2>/dev/null || echo "")
-if echo "$QDRANT_STATUS" | grep -q "ok\|healthy\|all shards are ready"; then
+if echo "$QDRANT_STATUS" | grep -qi "ok\|healthy\|passed\|all shards are ready"; then
   # Get vector count
   VECTORS=$(curl -s --max-time 5 "http://localhost:${QDRANT_PORT}/collections/openclaw_memories" 2>/dev/null \
     | jq '.result.vectors_count // .result.points_count // "?"' 2>/dev/null || echo "?")
