@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${TOOLS_SERVER_URL:-https://mel.taile54a5b.ts.net:8443}"
+# Default to localhost — each machine runs its own tools server after teleport.
+# Override with TOOLS_SERVER_URL env var if needed (e.g. for the original mel server).
+BASE_URL="${TOOLS_SERVER_URL:-https://localhost:8443}"
 PASSWORD="${TOOLS_SERVER_PASSWORD:-mel2026}"
 COOKIE_FILE="/tmp/tools_server_cookie_$$.txt"
 ALL_OK=true
@@ -13,7 +15,7 @@ trap cleanup EXIT
 if ! curl -sk --max-time 5 -c "$COOKIE_FILE" -X POST "$BASE_URL/api/login" \
   -H 'Content-Type: application/json' \
   -d "{\"password\":\"$PASSWORD\"}" >/dev/null; then
-  echo "TOOLS_SERVER_CHECK: FAIL (login/unreachable)"
+  echo "TOOLS_SERVER_CHECK: FAIL (unreachable at ${BASE_URL} — is tools-config-server.service running?)"
   ALL_OK=false
 else
   CREDS_JSON=$(curl -sk --max-time 8 -b "$COOKIE_FILE" "$BASE_URL/api/credentials" || true)

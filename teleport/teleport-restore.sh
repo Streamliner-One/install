@@ -624,7 +624,9 @@ SERVICE
 
   runuser -l "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user daemon-reload" 2>/dev/null || true
   runuser -l "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user enable tools-config-server 2>/dev/null" || true
-  ok "Tools Config Server service configured (bind: ${TOOLS_BIND})"
+  runuser -l "${TARGET_USER}" -c "XDG_RUNTIME_DIR=/run/user/$(id -u ${TARGET_USER}) systemctl --user start tools-config-server 2>/dev/null" || true
+  sleep 3
+  ok "Tools Config Server service configured and started (bind: ${TOOLS_BIND})"
 
   # Update AGENTS.md with actual tools server URL
   AGENTS_MD="${WORKSPACE_DIR}/AGENTS.md"
