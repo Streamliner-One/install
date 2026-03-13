@@ -44,7 +44,7 @@ WORKSPACE_REPO="${WORKSPACE_REPO:-https://github.com/prudkov/mel-memory.git}"
 BACKUP_FILE="${BACKUP_FILE:-}"
 BACKUP_KEY="${BACKUP_KEY:-}"
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-NODE_VERSION="20"
+NODE_VERSION="22"
 QDRANT_PORT="6333"
 NEO4J_HTTP_PORT="8474"
 NEO4J_BOLT_PORT="8687"
@@ -234,13 +234,27 @@ NPM_GLOBAL="${TARGET_HOME}/.npm-global"
 mkdir -p "$NPM_GLOBAL"
 runuser -l "${TARGET_USER}" -c "npm config set prefix '${NPM_GLOBAL}'"
 
+# Add npm-global/bin to PATH in .bashrc and .profile so 'openclaw' works in shell
+for rcfile in "${TARGET_HOME}/.bashrc" "${TARGET_HOME}/.profile"; do
+  if ! grep -q "npm-global/bin" "$rcfile" 2>/dev/null; then
+    echo "" >> "$rcfile"
+    echo "# OpenClaw / npm global binaries" >> "$rcfile"
+    echo "export PATH=\"\$HOME/.npm-global/bin:\$PATH\"" >> "$rcfile"
+  fi
+done
+chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.bashrc" "${TARGET_HOME}/.profile" 2>/dev/null || true
+
 if ! command -v openclaw &>/dev/null && [ ! -f "${NPM_GLOBAL}/bin/openclaw" ]; then
   info "Installing OpenClaw..."
+  chown -R "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.npm" 2>/dev/null || true
   runuser -l "${TARGET_USER}" -c "PATH=\"${NPM_GLOBAL}/bin:\$PATH\" npm install -g openclaw 2>&1 | tail -5"
   ok "OpenClaw installed"
 else
-  ok "OpenClaw already installed"
+  ok "OpenClaw already installed: $(runuser -l "${TARGET_USER}" -c "PATH=\"${NPM_GLOBAL}/bin:\$PATH\" openclaw --version 2>/dev/null" || echo "unknown")"
 fi
+
+# Extensions are local plugins (not on npm) — restored from backup in Phase 8
+ok "OpenClaw ready (extensions will be restored from backup in Phase 8)"
 
 # ── Phase 4/11: Decrypt and extract backup ──────────────────────────────────────
 phase "4/11 — Decrypt backup archive"
@@ -405,6 +419,26 @@ if [ -d "${EXTRACT_DIR}/hooks" ]; then
   ok "Hooks restored"
 fi
 
+# Extensions (local plugins: openclaw-mem0, lossless-claw, cognee-graph-tools etc)
+if [ -f "${EXTRACT_DIR}/extensions.tar.gz" ]; then
+  info "Restoring local extensions..."
+  mkdir -p "${OPENCLAW_DIR}/extensions"
+  tar xzf "${EXTRACT_DIR}/extensions.tar.gz" -C "${OPENCLAW_DIR}" 2>/dev/null
+  # Reinstall node_modules for each extension
+  for ext_dir in "${OPENCLAW_DIR}/extensions"/*/; do
+    if [ -f "${ext_dir}/package.json" ]; then
+      ext_name=$(basename "$ext_dir")
+      runuser -l "${TARGET_USER}" -c "cd '${ext_dir}' && PATH='${NPM_GLOBAL}/bin:/usr/local/bin:/usr/bin:/bin' npm install --quiet 2>&1 | tail -2" \
+        && info "  ✓ ${ext_name} deps installed" \
+        || warn "  ✗ ${ext_name} npm install failed (non-fatal)"
+    fi
+  done
+  chown -R "${TARGET_USER}:${TARGET_USER}" "${OPENCLAW_DIR}/extensions"
+  ok "Extensions restored"
+else
+  warn "No extensions.tar.gz in backup — gateway will fail to start until plugins are installed manually"
+fi
+
 # SQLite history
 if [ -f "${EXTRACT_DIR}/history.db" ]; then
   mkdir -p "${OPENCLAW_DIR}/mem0-oss"
@@ -413,15 +447,27 @@ if [ -f "${EXTRACT_DIR}/history.db" ]; then
   ok "SQLite history restored"
 fi
 
-# Root-level scripts (backup, scheduled checkin, health watchdog)
-for script in backup-mem0.sh backup.sh scheduled-checkin.sh health-watchdog.sh; do
-  if [ -f "${WORKSPACE_DIR}/${script}" ]; then
-    cp "${WORKSPACE_DIR}/${script}" "${OPENCLAW_DIR}/${script}"
-    chmod +x "${OPENCLAW_DIR}/${script}"
-    chown "${TARGET_USER}:${TARGET_USER}" "${OPENCLAW_DIR}/${script}"
-  fi
-done
-ok "Operational scripts in place"
+# Root-level scripts — restore from backup archive first, workspace as fallback
+if [ -d "${EXTRACT_DIR}/scripts" ]; then
+  for script in backup-mem0.sh backup.sh health-watchdog.sh memory-daily-check.sh preflight.sh scheduled-checkin.sh; do
+    if [ -f "${EXTRACT_DIR}/scripts/${script}" ]; then
+      cp "${EXTRACT_DIR}/scripts/${script}" "${OPENCLAW_DIR}/${script}"
+      chmod +x "${OPENCLAW_DIR}/${script}"
+      chown "${TARGET_USER}:${TARGET_USER}" "${OPENCLAW_DIR}/${script}"
+    fi
+  done
+  ok "Operational scripts restored from backup"
+else
+  warn "No scripts/ dir in backup — falling back to workspace copies"
+  for script in backup-mem0.sh backup.sh scheduled-checkin.sh health-watchdog.sh memory-daily-check.sh preflight.sh; do
+    if [ -f "${WORKSPACE_DIR}/${script}" ]; then
+      cp "${WORKSPACE_DIR}/${script}" "${OPENCLAW_DIR}/${script}"
+      chmod +x "${OPENCLAW_DIR}/${script}"
+      chown "${TARGET_USER}:${TARGET_USER}" "${OPENCLAW_DIR}/${script}"
+    fi
+  done
+  ok "Operational scripts in place (from workspace)"
+fi
 
 # ── Phase 9/11: Systemd + cron ────────────────────────────────────────────────
 phase "9/11 — Systemd service + cron"
@@ -433,19 +479,30 @@ mkdir -p "$SYSTEMD_USER_DIR"
 # Read Telegram token from restored openclaw.json for reference
 TELEGRAM_TOKEN=$(jq -r '.channels.telegram.token // empty' "${OPENCLAW_DIR}/openclaw.json" 2>/dev/null || echo "")
 
+NODE_BIN=$(runuser -l "${TARGET_USER}" -c "which node" 2>/dev/null || echo "/usr/bin/node")
+OPENCLAW_MAIN="${NPM_GLOBAL}/lib/node_modules/openclaw/dist/index.js"
+
 cat > "${SYSTEMD_USER_DIR}/openclaw-gateway.service" << SERVICE
 [Unit]
 Description=OpenClaw Gateway
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=simple
-WorkingDirectory=${OPENCLAW_DIR}
-ExecStart=${NPM_GLOBAL}/bin/openclaw gateway start --foreground
+ExecStart=${NODE_BIN} ${OPENCLAW_MAIN} gateway --port 18789
 Restart=always
-RestartSec=10
+RestartSec=5
+TimeoutStopSec=30
+TimeoutStartSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
 Environment=HOME=${TARGET_HOME}
+Environment=TMPDIR=/tmp
 Environment=PATH=${NPM_GLOBAL}/bin:/usr/local/bin:/usr/bin:/bin
+Environment=OPENCLAW_GATEWAY_PORT=18789
+Environment=OPENCLAW_SYSTEMD_UNIT=openclaw-gateway.service
+Environment=OPENCLAW_SERVICE_MARKER=openclaw
+Environment=OPENCLAW_SERVICE_KIND=gateway
 
 [Install]
 WantedBy=default.target
@@ -492,6 +549,17 @@ ok "Cron jobs installed"
 # Apply post-update hooks immediately (fixes SQLite binding symlink + graph patch)
 info "Running post-update hooks..."
 runuser -l "${TARGET_USER}" -c "bash ${OPENCLAW_DIR}/hooks/post-update.sh 2>&1" || warn "post-update.sh had errors (non-fatal)"
+
+# Rebuild native Node modules (better-sqlite3 etc) against current Node version
+info "Rebuilding native Node modules..."
+runuser -l "${TARGET_USER}" -c "
+  OCLAW_DIR='${NPM_GLOBAL}/lib/node_modules/openclaw'
+  if [ -d \"\$OCLAW_DIR\" ]; then
+    cd \"\$OCLAW_DIR\" && PATH='${NPM_GLOBAL}/bin:/usr/local/bin:/usr/bin:/bin' npm rebuild 2>&1 | tail -5
+  else
+    echo 'openclaw module dir not found, skipping rebuild'
+  fi
+" || warn "npm rebuild had errors (non-fatal)"
 
 # Give npm a moment to settle before SQLite binding is used
 sleep 3
@@ -592,6 +660,33 @@ verify "Groove digest exists"         test -f "${WORKSPACE_DIR}/projects/groove-
 verify "Groove watchdog exists"       test -f "${WORKSPACE_DIR}/projects/groove-digest/send-watchdog.sh"
 verify "harden.sh available"          test -f "${WORKSPACE_DIR}/streamliner/teleport/harden.sh"
 
+# ── Phase 11/11: Start services ───────────────────────────────────────────────
+phase "11/11 — Start services"
+
+TARGET_UID=$(id -u "${TARGET_USER}")
+XDG="XDG_RUNTIME_DIR=/run/user/${TARGET_UID}"
+
+# Ensure XDG runtime dir exists (needed for systemd --user without active session)
+mkdir -p "/run/user/${TARGET_UID}"
+chown "${TARGET_USER}:${TARGET_USER}" "/run/user/${TARGET_UID}"
+chmod 700 "/run/user/${TARGET_UID}"
+
+warn "Gateway NOT auto-started — configure a dedicated Telegram bot token first"
+info "  Each OpenClaw instance needs its own bot. Do NOT reuse an existing bot token."
+info "  1. Create a new bot: message @BotFather on Telegram → /newbot"
+info "  2. Update openclaw.json: channels.telegram.token = <your-new-token>"
+info "  3. Then start manually: systemctl --user start openclaw-gateway"
+info "  Or run: openclaw pairing list  (after starting gateway)"
+
+info "Starting Tools Config Server..."
+runuser -l "${TARGET_USER}" -c "${XDG} systemctl --user start tools-config-server" 2>/dev/null || true
+sleep 2
+if runuser -l "${TARGET_USER}" -c "${XDG} systemctl --user is-active tools-config-server" 2>/dev/null | grep -q "^active"; then
+  ok "Tools Config Server started"
+else
+  warn "Tools server did not start — check: journalctl --user -u tools-config-server -n 20"
+fi
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [ "$FAIL" -eq 0 ]; then
@@ -605,15 +700,19 @@ if [ "$CREATE_USER" = "true" ]; then
   echo -e "${YELLOW}👤 New user created: ${TARGET_USER}${NC}"
   echo -e "${YELLOW}   Temp password:    ${USER_TEMP_PASSWORD}${NC}"
   echo -e "${YELLOW}   Saved to:         /root/openclaw-user-password.txt (root-readable)${NC}"
-  echo -e "${YELLOW}   Change with:      passwd ${TARGET_USER}${NC}"
+  echo -e "${YELLOW}   Change with:      passwd${NC}"
   echo ""
 fi
 echo "Next steps:"
-echo "  1. Start gateway:       runuser -l ${TARGET_USER} -c 'openclaw gateway start'"
-echo "  2. Start tools server:  runuser -l ${TARGET_USER} -c 'XDG_RUNTIME_DIR=/run/user/\$(id -u ${TARGET_USER}) systemctl --user start tools-config-server'"
-echo "  3. Check status:        runuser -l ${TARGET_USER} -c 'openclaw status'"
-echo "  4. Verify memory:       test a memory search from the agent"
-echo "  5. Tools dashboard:     https://${TOOLS_BIND} (password printed above)"
+echo "  1. SSH as ${TARGET_USER}:       ssh ${TARGET_USER}@<server-ip>"
+echo "  2. Change password:       passwd"
+echo "  3. ⚠️  Create a NEW Telegram bot via @BotFather — do NOT reuse an existing token"
+echo "  4. Update bot token:      nano ~/.openclaw/openclaw.json"
+echo "                            → channels.telegram.token = <new-bot-token>"
+echo "  5. Start gateway:         systemctl --user start openclaw-gateway"
+echo "  6. Approve Telegram pair: openclaw pairing list → openclaw pairing approve"
+echo "  7. Tools dashboard:       https://<server-ip>:8443 (password printed above)"
+echo "  8. Harden:                bash ${WORKSPACE_DIR}/streamliner/teleport/harden.sh"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "${YELLOW}🔒 Security hardening (run AFTER confirming everything works):${NC}"
