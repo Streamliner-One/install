@@ -585,7 +585,8 @@ sleep 3
 phase "9.5/11 — Tools Config Server"
 
 TOOLS_SERVER_DIR="${WORKSPACE_DIR}/tools-server"
-TOOLS_BIND="${TOOLS_BIND:-127.0.0.1:8443}"
+TOOLS_BIND="${TOOLS_BIND:-0.0.0.0:8443}"
+TOOLS_AGENT_PORT="${TOOLS_AGENT_PORT:-8080}"
 TOOLS_PASSWORD="${TOOLS_PASSWORD:-$(openssl rand -hex 16)}"
 
 if [ -d "${TOOLS_SERVER_DIR}" ]; then
@@ -613,6 +614,7 @@ After=network.target
 Type=simple
 WorkingDirectory=${TOOLS_SERVER_DIR}
 ExecStart=/usr/bin/node ${TOOLS_SERVER_DIR}/server.js --bind ${TOOLS_BIND} --https --password ${TOOLS_PASSWORD}
+Environment=TOOLS_AGENT_PORT=${TOOLS_AGENT_PORT}
 Restart=always
 RestartSec=10
 Environment=HOME=${TARGET_HOME}
@@ -628,13 +630,9 @@ SERVICE
   sleep 3
   ok "Tools Config Server service configured and started (bind: ${TOOLS_BIND})"
 
-  # Update AGENTS.md with actual tools server URL
-  AGENTS_MD="${WORKSPACE_DIR}/AGENTS.md"
-  if [ -f "$AGENTS_MD" ]; then
-    # Replace any existing tools server URL line
-    sed -i "s|https://[0-9.]\\+:8443|https://${TOOLS_BIND}|g" "$AGENTS_MD"
-    ok "AGENTS.md updated with tools server URL"
-  fi
+  # Agent always uses localhost:8080 — no update to AGENTS.md needed.
+  # The server exposes http://127.0.0.1:${TOOLS_AGENT_PORT} automatically (no TLS, local only).
+  ok "Agent endpoint: http://localhost:${TOOLS_AGENT_PORT} (no TLS, local only)"
 
   echo ""
   echo -e "  ${YELLOW}⚠️  Tools server password: ${TOOLS_PASSWORD}${NC}"
