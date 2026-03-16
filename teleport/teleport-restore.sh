@@ -422,11 +422,18 @@ SERVICE
       chmod 600 "${TOOLS_SERVER_DIR}/data/tools.db"
       ok "tools.db restored — credentials and rules intact"
     elif [ -d "${EXTRACT_DIR}/tools-server-data" ]; then
+      # tools-registry.json lives at workspace root (current format)
+      if [ -f "${EXTRACT_DIR}/tools-server-data/tools-registry.json" ]; then
+        cp "${EXTRACT_DIR}/tools-server-data/tools-registry.json" "${WORKSPACE_DIR}/tools-registry.json"
+        chown "${TARGET_USER}:${TARGET_USER}" "${WORKSPACE_DIR}/tools-registry.json"
+        ok "tools-registry.json restored — credentials and intent rules intact"
+      fi
+      # Also copy any remaining files into data/ for forward-compat
       mkdir -p "${TOOLS_SERVER_DIR}/data"
-      cp -r "${EXTRACT_DIR}/tools-server-data/." "${TOOLS_SERVER_DIR}/data/"
-      ok "Tools Config Server data restored from backup (legacy format)"
+      cp -r "${EXTRACT_DIR}/tools-server-data/." "${TOOLS_SERVER_DIR}/data/" 2>/dev/null || true
+      ok "Tools Config Server data restored from backup"
     else
-      warn "No tools.db in backup — server will start empty (re-enter credentials via dashboard at https://localhost:8443)"
+      warn "No tools-registry.json in backup — server will start empty (re-enter credentials via dashboard at https://localhost:8443)"
     fi
 
     cat > "${SYSTEMD_USER_DIR}/tools-config-server.service" << SERVICE
@@ -830,7 +837,7 @@ if ! docker ps --format '{{.Names}}' | grep -q "^qdrant$"; then
   docker run -d \
     --name qdrant \
     --restart unless-stopped \
-    -p ${QDRANT_PORT}:6333 \
+    -p 127.0.0.1:${QDRANT_PORT}:6333 \
     -v "${OPENCLAW_DIR}/qdrant-storage:/qdrant/storage" \
     qdrant/qdrant:latest > /dev/null
   ok "Qdrant container started"
@@ -844,8 +851,8 @@ if ! docker ps --format '{{.Names}}' | grep -q "^neo4j-mem0$"; then
   docker run -d \
     --name neo4j-mem0 \
     --restart unless-stopped \
-    -p ${NEO4J_HTTP_PORT}:7474 \
-    -p ${NEO4J_BOLT_PORT}:7687 \
+    -p 127.0.0.1:${NEO4J_HTTP_PORT}:7474 \
+    -p 127.0.0.1:${NEO4J_BOLT_PORT}:7687 \
     -e NEO4J_AUTH="${NEO4J_AUTH}" \
     -v "${OPENCLAW_DIR}/neo4j-data:/data" \
     neo4j:5.26.4-community > /dev/null
