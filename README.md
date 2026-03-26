@@ -34,7 +34,7 @@ Sets up Node.js, downloads the server, installs dependencies, creates a systemd 
 | **Search** | Brave Search, Perplexity, NewsAPI, Tavily |
 | **Productivity** | Notion, Notion (Enhanced), Todoist, Google Workspace |
 | **Knowledge** | Obsidian Sync (Headless), Readwise |
-| **Travel** | Amadeus, Duffel, Aviationstack |
+| **Travel** | Amadeus, Duffel, Aviationstack, OSRM |
 | **Voice** | ElevenLabs, VAPI |
 | **Support** | Groove HQ |
 | **Automation** | n8n |
